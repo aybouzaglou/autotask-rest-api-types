@@ -46,6 +46,11 @@
       "types": "./dist/generated/metadata.d.ts",
       "import": "./dist/generated/metadata.js",
       "default": "./dist/generated/metadata.js"
+    },
+    "./webhooks": {
+      "types": "./dist/core/webhooks/index.d.ts",
+      "import": "./dist/core/webhooks/index.js",
+      "default": "./dist/core/webhooks/index.js"
     }
   },
   "bin": {
@@ -70,6 +75,11 @@
     "enrich": "node scripts/enrich.mjs",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretypetest": "pnpm build",
+    "typetest": "tsc -p typetest/tsconfig.json",
+    "pretest": "pnpm build",
+    "test": "node --test test/*.test.mjs",
+    "check": "pnpm typetest && pnpm test",
     "prepublishOnly": "npm run generate && npm run build"
   },
   "engines": {

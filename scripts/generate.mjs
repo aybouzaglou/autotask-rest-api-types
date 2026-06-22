@@ -83,6 +83,10 @@ const respModel = (op) => {
  * @property {string|null} model
  * @property {string|null} entity
  * @property {Set<string>} methods
+ * @property {Set<string>} rootMethods
+ * @property {Set<string>} idMethods
+ * @property {Set<string>} childRootMethods
+ * @property {Set<string>} childIdMethods
  * @property {boolean} query
  * @property {boolean} count
  * @property {boolean} entityInfo

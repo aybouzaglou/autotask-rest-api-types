@@ -10,6 +10,7 @@ Built to make Autotask integrations in **Next.js / TypeScript** projects safe an
 - ✅ **Typed response envelopes** — `{ items, pageDetails }`, `{ item }`, `{ itemId }`, plus the entity-information / live picklist metadata shapes.
 - ✅ **Two client surfaces** — drop-in typing for the popular [`@apigrate/autotask-restapi`](https://github.com/apigrate/autotask-restapi) connector, and a provider-agnostic `AutotaskTypedClient` you can implement over `fetch`.
 - ✅ **Runtime catalog** — `AUTOTASK_COLLECTIONS` describes every collection (operations, UDF support, parent collections) for tooling and agents.
+- ✅ **Webhook helpers** — typed delivery parsing, HMAC verification, registration plan builders, and a tiny optional router.
 - ✅ **Optional instance enrichment** — `npx autotask-enrich` (read-only) captures **your own** instance's live picklist values, required/read-only flags, and reference targets into a file in **your** project, plus strict picklist type aliases (`TicketPriorityValue = 1 | 2 | 3 | 4`). Instance-specific data is never bundled or published — you generate it yourself.
 - ✅ **Type-only by default** — no runtime dependencies; tree-shakeable; ESM with full `.d.ts`.
 
@@ -96,6 +97,86 @@ if (!res.ok) {
 ```
 
 > **Connector vs `fetch`.** The apigrate connector (the `AutotaskApi` cast) **throws** on a failed request rather than returning the envelope — the call rejects with an `AutotaskApiError` carrying `.status` and `.details` (the `{ errors }` body). Wrap those calls in `try/catch` and read `err.details` / `err.status`. The `isAutotaskError` check above is for the raw `fetch` / `AutotaskTypedClient` path, which returns the body.
+
+---
+
+## Webhooks
+
+Webhook helpers are available from the root package and from the tree-shakeable subpath:
+
+```ts
+import {
+  AUTOTASK_SIGNATURE_HEADER,
+  isDeliveryFor,
+  isUpdateDelivery,
+  parseWebhookDelivery,
+  verifyAutotaskSignature,
+} from "autotask-rest-api-types/webhooks";
+```
+
+### Receive and verify a delivery
+
+Read the raw body before parsing JSON. Autotask signs the raw request body with the webhook secret:
+
+```ts
+export async function POST(req: Request) {
+  const secret = process.env.AUTOTASK_WEBHOOK_SECRET;
+  if (!secret) return new Response("Missing AUTOTASK_WEBHOOK_SECRET", { status: 500 });
+
+  const raw = await req.text();
+  const signature = req.headers.get(AUTOTASK_SIGNATURE_HEADER);
+
+  // If real callouts return 401, retry with `{ escapeBody: true }`.
+  // That escape pass is reverse-engineered and undocumented, so keep it opt-in.
+  const ok = await verifyAutotaskSignature(raw, secret, signature);
+  if (!ok) return new Response("Invalid signature", { status: 401 });
+
+  const delivery = parseWebhookDelivery(JSON.parse(raw));
+  if (isDeliveryFor(delivery, "Tickets") && isUpdateDelivery(delivery)) {
+    const title = delivery.Fields.title; // string | null | undefined
+    // Update callouts contain subscribed/changed fields only.
+    void title;
+  }
+
+  return Response.json({ ok: true });
+}
+```
+
+`parseWebhookDelivery` validates `Action`, accepts Autotask's legacy `EntityType` names such as `Account`, and normalizes them to package collection names such as `Companies`. The field payload is deliberately permissive because a raw live callout still needs to confirm exact `Fields` casing, UDF nesting, and whether delete/deactivation deliveries omit `Fields` or send `{}`.
+
+### Plan webhook registration
+
+`buildWebhookRegistrationPlan` creates a parent-first plan with child field, UDF-field, and excluded-resource rows. If you already have numeric field ids, the executor creates the parent, reads the id with `writtenId`, and injects `webhookID` into child bodies:
+
+```ts
+import {
+  buildWebhookRegistrationPlan,
+  executeWebhookRegistrationPlan,
+} from "autotask-rest-api-types/webhooks";
+
+const plan = buildWebhookRegistrationPlan("Ticket", {
+  webhook: {
+    name: "Ticket updates",
+    webhookUrl: "https://example.com/api/autotask",
+    isSubscribedToUpdateEvents: true,
+  },
+  fields: [{ fieldID: 12, subscribed: true }],
+  excludedResourceIDs: [apiUserResourceId],
+});
+
+await executeWebhookRegistrationPlan(plan, async (step, body, parentId) => {
+  // Call your client here. Child steps receive `parentId` and a body containing `webhookID`.
+  return createWebhookRow(step.collection, body, parentId);
+});
+```
+
+If you start from field names, resolve them from the live webhook child collection metadata, not from `Tickets.fieldInfo()` or the parent webhook route. The flow is:
+
+1. Create or find the parent webhook and normalize its id with `writtenId(res)`.
+2. Query `TicketWebhookFields/entityInformation/fields` and read the `fieldID` picklist. For UDFs, query `TicketWebhookUdfFields/entityInformation/fields` and read `udfFieldID`.
+3. Build `nameToId`, call `resolveFieldIds(["title", "status"], nameToId)`, then create the child rows with `{ ...step.body, webhookID: webhookId }`.
+
+Webhook endpoints should acknowledge quickly with a 2xx response, dedupe on `Guid`, and keep retry/queue/persistence concerns in your app. A successful registration can still fail to fire if `isReady` is false or the owner resource lacks permission; sustained failures can deactivate a webhook.
 
 ---
 

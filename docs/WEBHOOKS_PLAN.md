@@ -1,8 +1,10 @@
 # Webhook Support — Implementation Plan
 
-> **Status:** Proposed · **Date:** 2026-06-21
+> **Status:** Implemented (S1–S8 landed; SV pending a live capture) · **Date:** 2026-06-21
 > **Scope:** Add receive-side + setup helpers for Autotask PSA webhooks to `autotask-rest-api-types`.
 > **Source:** Multi-agent research + design + adversarial verification (both reviewers: _ship-with-fixes_; fixes folded in).
+>
+> **Implementation status (as built):** S1–S8 are implemented and green under `pnpm check` (build + typetest + runtime tests). **SV (live-callout verification) remains open by design** — the `escapeBody` default and the exact `Fields`/UDF shape are still unconfirmed against real traffic.
 
 This document is broken into **slices**. Each slice is sized for **one agent**, owns a distinct file (or a small, non-overlapping set), states its dependencies, and has its own acceptance criteria. Parallel-safe slices are marked. The **Shared Contracts** section below is the seam: every slice must produce/consume exactly those names and signatures so independently-built slices link together without coordination.
 
@@ -10,14 +12,15 @@ This document is broken into **slices**. Each slice is sized for **one agent**, 
 
 ## ⚠️ Confidence note — read before building runtime that touches the wire
 
-Two evidence tiers are **not** equal:
+These evidence tiers are **not** equal:
 
 - **Codebase facts — verified.** File paths, exports, `tsconfig`, the entity/registry shapes below were all directly confirmed in this repo.
-- **Autotask wire-format facts — NOT verbatim-confirmed.** The payload key casing, the exact `Fields` representation, UDF nesting, and the signature/escaping details come from **secondary sources** (the n8n Autotask trigger node's TS types + an official help page that shows the payload only as a screenshot image). **No raw captured delivery was found.**
+- **Autotask setup/entity facts — verified.** Supported webhook families, webhook child collections, child payload columns (`webhookID`, `fieldID`, `udfFieldID`, `resourceID`), the signature header name, and error-log behavior were checked against official Autotask docs and this repo's generated Swagger output.
+- **Autotask delivered-payload facts — NOT verbatim-confirmed.** The payload key casing, the exact `Fields` representation, UDF nesting, and the signature escaping details come from **secondary sources** (the n8n Autotask trigger node's TS types + an official help page that shows the payload only as a screenshot image). **No raw captured delivery was found.**
 
 Consequences baked into this plan:
 1. **Types are deliberately permissive** so they stay correct even if a wire detail differs (`Partial<Entity> & Record<string, unknown>`). Phase 1 is safe to ship regardless.
-2. **The signature verifier is unproven against live traffic.** It defaults to verifying **raw bytes** (what docs say is signed) with an opt-in `{ escapeBody: true }` fallback (reverse-engineered from n8n). **Slice V must run before the verifier is called "authoritative."**
+2. **The signature verifier is unproven against live traffic.** It defaults to verifying **raw bytes** (what docs say is signed) with an opt-in `{ escapeBody: true }` fallback (reverse-engineered from n8n). **SV must run before the verifier is called "authoritative."**
 
 ---
 
@@ -44,7 +47,11 @@ New folder: **`src/core/webhooks/`**, files: `delivery.ts`, `signature.ts`, `reg
 ### Type surface (from `delivery.ts`)
 ```ts
 WEBHOOK_ENTITY_TYPES            // readonly ["Tickets","Companies","Contacts","ConfigurationItems","TicketNotes"]
+WEBHOOK_ENTITY_TYPE_ALIASES     // raw payload aliases such as Account -> Companies
+WEBHOOK_ACTIONS                 // readonly ["Create","Update","Delete","Deactivated"]
 type WebhookEntityType          // (typeof WEBHOOK_ENTITY_TYPES)[number]
+type WebhookEntityTypeInput     // WebhookEntityType | keyof typeof WEBHOOK_ENTITY_TYPE_ALIASES
+type NormalizedWebhookEntityType<T>
 type WebhookAction              // "Create" | "Update" | "Delete" | "Deactivated"
 type WebhookEntityFor<E>        // E -> EntityOf<E>
 type WebhookFields<E>           // Partial<NonNullable<WebhookEntityFor<E>>> & { userDefinedFields?: UserDefinedField[] } & Record<string, unknown>
@@ -58,6 +65,9 @@ type AutotaskWebhookDelivery<E = WebhookEntityType>
 ### Guard / parse surface (from `delivery.ts`)
 ```ts
 function isWebhookEntityType(v: unknown): v is WebhookEntityType
+function isWebhookEntityTypeInput(v: unknown): v is WebhookEntityTypeInput
+function normalizeWebhookEntityType(v: unknown): WebhookEntityType | null
+function isWebhookAction(v: unknown): v is WebhookAction
 function isCreateDelivery<E>(d): d is WebhookCreateDelivery<E>
 function isUpdateDelivery<E>(d): d is WebhookUpdateDelivery<E>
 function isDeleteDelivery<E>(d): d is WebhookDeleteDelivery<E>
@@ -73,14 +83,23 @@ function timingSafeEqualString(a: string, b: string): boolean
 function computeAutotaskSignature(rawBody, secretKey): Promise<string>            // "sha1=BASE64"
 function verifyAutotaskSignature(rawBody, secretKey, header, opts?): Promise<boolean>
 function autotaskHmacEscape(jsonText: string): string                              // opt-in, reverse-engineered
+type AutotaskSignatureBody            // string | ArrayBuffer | Uint8Array
+interface ParsedHookSignature         // { algorithm; value }
+interface VerifyAutotaskSignatureOptions // { escapeBody? }
 ```
 ### Registration surface (from `registration.ts`)
 ```ts
 type WebhookEntityFamily        // "Company"|"Contact"|"ConfigurationItem"|"Ticket"|"TicketNote"
 const WEBHOOK_COLLECTIONS_FOR   // family -> { parent, fields, udfFields?, excluded } (TicketNote: NO udfFields)
-interface WebhookRegistrationSpec
+interface WebhookRegistrationSpec // parent body + already-resolved numeric field/udf/resource ids
 interface WebhookCreateStep
 interface WebhookRegistrationPlan
+type WebhookParentBody<F>             // Omit<Partial<EntityOf<parent>>, "id">
+interface WebhookFieldSelection      // { fieldID; subscribed?; displayAlways? }
+interface WebhookUdfFieldSelection   // { udfFieldID; subscribed?; displayAlways? }
+type WebhookCreateStepKind           // "parent"|"field"|"udfField"|"excludedResource"
+type WebhookRegistrationRunStep      // (step, body, parentId?) => Promise<AutotaskWriteResult>
+interface ExecutedWebhookRegistrationPlan // { webhookId; childIds }
 function buildWebhookRegistrationPlan(family, spec): WebhookRegistrationPlan
 function resolveFieldIds(names: string[], nameToId: Map<string, number>): number[]
 function executeWebhookRegistrationPlan(plan, runStep): Promise<{ webhookId; childIds }>
@@ -138,18 +157,21 @@ Each slice = one agent. Format: **Goal · Files · Depends on · Spec · Accepta
 
 **Spec:**
 - `WEBHOOK_ENTITY_TYPES = ["Tickets","Companies","Contacts","ConfigurationItems","TicketNotes"] as const`.
+- `WEBHOOK_ENTITY_TYPE_ALIASES` accepts Autotask payload/business-object names and normalizes them to the REST collection names above, at minimum: `Account -> Companies`, `Company -> Companies`, `Contact -> Contacts`, `InstalledProduct -> ConfigurationItems`, `ConfigurationItem -> ConfigurationItems`, `Ticket -> Tickets`, `TicketNote -> TicketNotes`.
+- `WEBHOOK_ACTIONS = ["Create","Update","Delete","Deactivated"] as const`.
 - `WebhookEntityFor<E>` maps each entity-type literal to its `EntityOf<…>` interface (`never` for non-members).
 - `WebhookFields<E> = Partial<NonNullable<WebhookEntityFor<E>>> & { userDefinedFields?: UserDefinedField[] } & Record<string, unknown>`.
   - JSDoc must state: which fields appear is runtime subscription config; **Update carries only changed/subscribed fields**; UDF nesting (`userDefinedFields` vs flat) is **unconfirmed — verify against a live callout**.
 - `WebhookDeliveryBase<E>` carries the envelope: `Guid: string`, `EntityType: E`, `Id: number`, `EventTime: string`, `SequenceNumber: number`, `PersonID: number`. JSDoc: dedupe on `Guid`; `SequenceNumber` may have gaps; `EventTime` format unconfirmed.
 - `Fields` lives **only** on `WebhookCreateDelivery`/`WebhookUpdateDelivery`; **omitted** from `WebhookDeleteDelivery`/`WebhookDeactivatedDelivery` (omission, not `?:` — required because `exactOptionalPropertyTypes: false`).
 - `AutotaskWebhookDelivery<E = WebhookEntityType>` = distributive union over the 4 action arms.
-- Guards as `export function`; `parseWebhookDelivery` asserts an object with a string `Action` then returns the union (no deep validation — it's a parse, not a validator).
+- Guards as `export function`; `parseWebhookDelivery` asserts an object with a **known** `Action` and either a known collection-name `EntityType` or a known alias, then returns a copy normalized to the collection-name union. It is still a thin parser, not a deep validator: do not validate every envelope field or every `Fields` value.
 
 **Prose discipline (verifier-mandated):** Do **not** claim "no `Fields` on Delete" as a runtime fact. Say: _"`Fields` carries no meaningful data on Delete/Deactivated (id-only per docs); the key may be absent **or** an empty object — narrow on `Action`, don't rely on its presence."_ Mark exact physical presence as _verify against live instance_.
 
 **Acceptance:**
 - `pnpm typecheck` passes.
+- `parseWebhookDelivery` throws on unknown `Action` or unsupported `EntityType`, but accepts official legacy names such as `Account` and normalizes them to collection names such as `Companies`.
 - A `Tickets`+`Update` delivery, after `isDeliveryFor(d,"Tickets")` + `isUpdateDelivery(d)`, exposes `d.Fields.title` as `string | null | undefined` (not `unknown`).
 - Accessing `d.Fields` on a value narrowed to `Delete` is a **compile error**.
 
@@ -195,20 +217,25 @@ Each slice = one agent. Format: **Goal · Files · Depends on · Spec · Accepta
 **Spec:**
 - `WEBHOOK_COLLECTIONS_FOR` maps each family → `{ parent, fields, udfFields?, excluded }` using **real registry collection names**. **`TicketNote` has NO `udfFields`** (confirmed in `registry.ts`) — omit it; `satisfies Record<WebhookEntityFamily, …>`.
 - `buildWebhookRegistrationPlan(family, spec)`:
-  - throw if `fields.length + (udfFields?.length ?? 0) < 1` (Autotask requires ≥1 field/UDF).
+  - throw if no event subscription flag is enabled (`isSubscribedToCreateEvents`, `isSubscribedToUpdateEvents`, `isSubscribedToDeleteEvents`) unless a future API use case proves inactive draft webhooks are useful.
+  - throw if `(isSubscribedToCreateEvents || isSubscribedToUpdateEvents)` and `fields.length + (udfFields?.length ?? 0) < 1`. Autotask needs at least one field/UDF to emit meaningful create/update callouts. **Do not throw for delete-only webhooks with zero fields**; delete callouts are id-only by design.
   - throw if `spec.udfFields?.length` and the family has no `udfFields` collection (TicketNote).
   - emit ordered `WebhookCreateStep[]`: parent first (`usesParentRef: false`), then fields, udf fields, excluded resources (all `usesParentRef: true`).
-  - field body: `{ fieldID, isSubscribedField: subscribed ?? false, isDisplayAlwaysField: displayAlways ?? false }`; udf body uses `udfFieldID`; excluded body uses `{ resourceID }`.
-- `resolveFieldIds(names, nameToId)`: **pure** map lookup; throw listing any unresolved names. JSDoc must state the integer `fieldID` is **not** in this library's `FieldInformation` (only `name` + `isSupportedWebhookField`) — the caller obtains the name→id map from live `entityInformation/fields` metadata.
-- `executeWebhookRegistrationPlan(plan, runStep)`: optional driver; caller supplies `runStep(step, parentId)`; thread parent id into children. JSDoc note: webhook children reference the parent via a **`webhookID` foreign-key column on their own collection**, not the client's positional `parentId`.
+  - field body template: `{ fieldID, isSubscribedField: subscribed ?? false, isDisplayAlwaysField: displayAlways ?? false }`; udf body uses `udfFieldID`; excluded body uses `{ resourceID }`.
+  - child step bodies are templates until the parent id exists. The executor must add `{ webhookID: parentId }` to every field, udf-field, and excluded-resource create body.
+- `WebhookRegistrationSpec` contains the parent webhook body plus **already-resolved numeric ids** for subscribed fields, subscribed UDFs, and excluded resources. If the caller starts from field names, they must resolve names before building the plan.
+- `resolveFieldIds(names, nameToId)`: **pure** map lookup; throw listing any unresolved names. JSDoc must state the integer `fieldID` is **not** in the parent entity's `FieldInformation` (that only has `name` + `isSupportedWebhookField`). The caller builds `nameToId` from the live **webhook child collection** metadata: the `fieldID` picklist on `TicketWebhookFields` / `CompanyWebhookFields` / etc. Use the same helper for UDFs with a map built from the `udfFieldID` picklist on the matching `WebhookUdfFields` child collection.
+  - Name-based setup should query child collection metadata directly, for example `TicketWebhookFields/entityInformation/fields` and `TicketWebhookUdfFields/entityInformation/fields`, build `nameToId`, then create child field/UDF/excluded-resource steps under the parent webhook.
+- `executeWebhookRegistrationPlan(plan, runStep)`: optional driver; caller supplies `runStep(step, body, parentId?)`. The executor creates the parent first, reads the parent id with `writtenId`, then calls child steps with both the positional parent id and a final body that includes `webhookID: parentId`. JSDoc note: webhook children reference the parent via a **`webhookID` foreign-key column on their own collection**, in addition to the REST route's positional `parentId`.
 
 **Acceptance:**
 - `buildWebhookRegistrationPlan("TicketNote", { …, udfFields:[…] })` throws.
-- A 0-field spec throws.
+- A create/update spec with 0 fields/UDFs throws; a delete-only spec with 0 fields/UDFs yields only the parent step plus any excluded-resource steps.
 - A `Ticket` spec with 2 fields + 1 excluded resource yields 4 ordered steps (parent + 2 + 1).
 - `resolveFieldIds(["status","missing"], map)` throws naming `missing`.
+- The executor passes child `runStep` calls a body containing `webhookID` equal to the created parent id.
 
-**Out of scope:** making HTTP calls; deriving field ids from `FieldInformation` (it has none — do not pretend).
+**Out of scope:** making HTTP calls; deriving field ids from the parent entity's `FieldInformation` (it has none — do not pretend). Field-id metadata lookup belongs in docs/examples or caller code and uses the child collection metadata endpoint, e.g. `TicketWebhookFields/entityInformation/fields`.
 
 ---
 
@@ -277,17 +304,19 @@ Each slice = one agent. Format: **Goal · Files · Depends on · Spec · Accepta
 
 **Goal:** Lock the type guarantees and the verifier behavior.
 
-**Files:** add to `typetest/` (extend the existing pattern) and a small runtime test for `signature.ts` (round-trip) and `registration.ts` (plan shape + guard throws). Use the repo's existing test/typetest mechanism — inspect `typetest/` first.
+**Files:** add to `typetest/` (extend the existing pattern), add a zero-dependency runtime test for `signature.ts` (round-trip), `delivery.ts` (alias normalization + guard throws), and `registration.ts` (plan shape + guard throws), and ensure `package.json` exposes concrete scripts.
 
 **Depends on:** the slices under test (S1 → typetests; S2/S3 → runtime tests).
 
 **Spec / must-assert:**
 - `delivery.Fields.title` resolves to `string | null | undefined` (not `unknown`) under `noUncheckedIndexedAccess: true` — the autocomplete guarantee.
 - `Fields` access on a `Delete`-narrowed delivery is a type error (negative typetest).
+- `parseWebhookDelivery` rejects unknown `Action` and unsupported `EntityType` discriminants while accepting and normalizing known payload aliases such as `Account -> Companies`.
 - `computeAutotaskSignature` → `verifyAutotaskSignature` round-trips true; wrong-secret/tampered → false.
-- `buildWebhookRegistrationPlan` throws for TicketNote+UDF and for 0 fields; emits correct ordered steps otherwise.
+- `buildWebhookRegistrationPlan` throws for TicketNote+UDF and for create/update specs with 0 fields; allows delete-only 0-field specs; emits correct ordered steps otherwise.
+- `executeWebhookRegistrationPlan` injects `webhookID` into child bodies before calling `runStep`.
 
-**Acceptance:** `pnpm typecheck` + the test command pass; negative typetests fail to compile when the guard is removed.
+**Acceptance:** `package.json` has concrete scripts (`typetest`, `test`, and optionally `check`), then `pnpm build`, `pnpm typetest`, and `pnpm test` pass. Negative typetests fail to compile when the guard is removed.
 
 ---
 
@@ -303,7 +332,7 @@ Each slice = one agent. Format: **Goal · Files · Depends on · Spec · Accepta
 - Read **raw bytes** (`await req.text()`) **before** `JSON.parse` (the HMAC is over raw body).
 - Verify with `verifyAutotaskSignature(raw, secret, req.headers.get(AUTOTASK_SIGNATURE_HEADER))`; **comment at the call site:** _"if real callouts return 401, retry with `{ escapeBody: true }` — Autotask may custom-escape the signed body; reverse-engineered, undocumented."_
 - `parseWebhookDelivery` → narrow with `isDeliveryFor` + action guards → handle.
-- Registration example: use `writtenId(res)` (not `as number`); build `nameToId` from live `fieldInfo("Tickets")` (return type is `FieldInformationResult` — access the fields array off the envelope, **not** `FieldInformation[]` directly); pass your API user's resource id to `excludedResourceIDs` to break echo loops.
+- Registration example: show the name-resolution flow. Use `writtenId(res)` (not `as number`) to create or identify the parent webhook when creating child rows; build `nameToId` from live webhook child metadata, **not** from `Tickets.fieldInfo()` and not from the parent webhook route. For ticket fields, query `TicketWebhookFields/entityInformation/fields` and read the `fieldID` picklist; for ticket UDFs, query `TicketWebhookUdfFields/entityInformation/fields` and read the `udfFieldID` picklist. Access the `fields` array off the metadata envelope, and pass your API user's resource id to `excludedResourceIDs` to break echo loops.
 - Document operational facts as **prose, not enforced**: ack 2xx fast (~10s timeout, retries), idempotency/dedup on `Guid`, `isReady` + owner-permission gating can make a "successful" registration never fire, silent auto-deactivation on sustained failures, ~50 active webhooks/entity, threshold-exceeded (number unconfirmed — don't state it as fact).
 
 **Acceptance:** README section renders; example route typechecks against the package; no `as number`; raw-body-before-parse is explicit.
@@ -333,7 +362,9 @@ Each slice = one agent. Format: **Goal · Files · Depends on · Spec · Accepta
 | Fact | Where |
 |---|---|
 | `TicketNote` webhook group has **no** `UdfField` collection (others have all four) | `src/generated/registry.ts` |
-| `FieldInformation` has `name` + `isSupportedWebhookField` but **no `fieldID`** | `src/core/responses.ts:75-92` |
+| Parent-entity `FieldInformation` has `name` + `isSupportedWebhookField` but **no `fieldID`**; webhook `fieldID` values come from the `fieldID` picklist on the live `*WebhookFields` child metadata | `src/core/responses.ts:75-92`, official webhook field docs |
+| Webhook child create bodies carry a `webhookID` foreign key as well as the positional parent route | `src/generated/entities.ts`, official webhook setup docs |
+| This repo has concrete `typetest`, `test`, and `check` scripts for the webhook work | `package.json` |
 | `AutotaskWriteResult.itemId` is `number \| string` → use `writtenId()` | `src/core/util.ts`, `src/core/responses.ts` |
 | `WebhookEventErrorLog.payload` is a `string` | `src/generated/entities.ts` |
 | `EntityOf<K>`, `EntityName` available | `src/generated/registry.ts` |

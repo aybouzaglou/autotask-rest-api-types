@@ -1,3 +1,5 @@
+allowBuilds:
+  sharp: true
 # Allow sharp (pulled in transitively by Next.js) to run its native build.
 # pnpm 10+ blocks dependency build scripts by default; without this the
 # deps-status pre-check aborts `pnpm dev`/`build` with ERR_PNPM_IGNORED_BUILDS.

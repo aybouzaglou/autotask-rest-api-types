@@ -9,8 +9,9 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "autotask-rest-api-types": ["../dist/index.d.ts"]
+      "autotask-rest-api-types": ["../dist/index.d.ts"],
+      "autotask-rest-api-types/webhooks": ["../dist/core/webhooks/index.d.ts"]
     }
   },
-  "include": ["smoke.ts"]
+  "include": ["*.ts"]
 }

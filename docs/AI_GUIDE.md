@@ -21,6 +21,14 @@ This package (`autotask-rest-api-types`) gives you everything needed to write **
 9. **Filter `value` is not type-checked against the field.** `{ op: "eq", field: "status", value: "open" }` compiles even though `status` is numeric — the compiler can't correlate them (UDF/dotted-path fields require `field: string`). Get the value type right yourself.
 10. **Rate limit: 10,000 requests/hour/database.** Batch with queries + `includeFields`; avoid N+1 fetch loops.
 
+## Webhook rules
+
+- Verify webhook signatures against the raw request body before `JSON.parse`: `verifyAutotaskSignature(raw, secret, req.headers.get(AUTOTASK_SIGNATURE_HEADER))`.
+- Keep `{ escapeBody: true }` as an opt-in fallback only. It is reverse-engineered from community behavior and should be enabled only after a real Autotask callout fails raw-body verification.
+- Parse with `parseWebhookDelivery`, then narrow with `isDeliveryFor(delivery, "Tickets")` and action guards such as `isUpdateDelivery`. `parseWebhookDelivery` accepts legacy payload entity names such as `Account` and normalizes them to collection names such as `Companies`. `Fields` exists at the type level only on create/update deliveries.
+- Treat delivered `Fields` as permissive. A raw live capture still needs to confirm exact casing, UDF nesting, and whether delete/deactivation callouts omit `Fields` or send an empty object.
+- For registration from field names, do not use parent entity `fieldInfo()` and do not query the parent webhook route for metadata. Query the child collection metadata (`TicketWebhookFields/entityInformation/fields`, and `TicketWebhookUdfFields/entityInformation/fields` for UDFs), then resolve the `fieldID` / `udfFieldID` picklists.
+
 > **Known catalog gap:** `ResourceTimeOffAdditional` and `ResourceTimeOffBalances` appear in `AUTOTASK_COLLECTIONS` with `typed: false` and all-false capability flags. That is a generation artifact — the API exposes them only under their parent (`GET/PUT/PATCH /Resources/{parentId}/TimeOffAdditional`, `GET /Resources/{parentId}/TimeOffBalances[/{year}]`), with no top-level operational path, so the catalog can't infer their shape. Address them via the parent path directly, not via the catalog flags.
 
 ## Building queries

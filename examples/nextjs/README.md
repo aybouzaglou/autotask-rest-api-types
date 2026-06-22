@@ -10,6 +10,8 @@ A small Next.js (App Router) app that exercises [`autotask-rest-api-types`](../.
 
 > ⚠️ **Demo, not production.** The `/api/tickets` route has **no authentication or rate limiting**. Live mode is gated behind an explicit `ENABLE_LIVE_DEMO=1` flag so it can't switch on by accident, but you should still never deploy this route to the public internet against a real instance.
 
+> 🔔 **Webhook receiver.** `POST /api/autotask` verifies inbound Autotask webhook deliveries against the raw request body. It needs `AUTOTASK_WEBHOOK_SECRET` (the registered webhook's `secretKey`) and returns `500` until it is set — see [`.env.local.example`](.env.local.example).
+
 ## Run it (simulated — no credentials)
 
 ```bash
@@ -38,6 +40,7 @@ Live mode requires **both** `ENABLE_LIVE_DEMO=1` **and** credentials. With both 
 | [`lib/autotask.ts`](lib/autotask.ts) | A complete typed `fetch` client (zone detection, header auth, `AutotaskApiError`) implementing `AutotaskTypedClient` |
 | [`lib/tickets-service.ts`](lib/tickets-service.ts) | Live-vs-simulated switch (`ENABLE_LIVE_DEMO` gate); `includeFields` query; picklist options from the sample module |
 | [`app/api/tickets/route.ts`](app/api/tickets/route.ts) | Route handlers (GET list / POST create) with the 688 write guard |
+| [`app/api/autotask/route.ts`](app/api/autotask/route.ts) | Webhook receiver: raw-body HMAC verification (`AUTOTASK_WEBHOOK_SECRET`), `parseWebhookDelivery`, and typed `isDeliveryFor`/action narrowing |
 | [`app/ticket-console.tsx`](app/ticket-console.tsx) | Client UI: picklist dropdowns, create form, typed error display |
 
 Verified here with `next build` (production build + type-check pass) and live request tests.
