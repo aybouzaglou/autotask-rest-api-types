@@ -1,0 +1,81 @@
+{
+  "name": "autotask-rest-api-types",
+  "version": "0.1.0",
+  "description": "Comprehensive, generated TypeScript types for the Datto/Kaseya Autotask PSA REST API. Strongly-typed entities, query filters, responses, and a typed client surface for the apigrate/autotask-restapi connector. Built for Next.js and TS projects.",
+  "keywords": [
+    "autotask",
+    "autotask-rest-api",
+    "datto",
+    "kaseya",
+    "psa",
+    "typescript",
+    "types",
+    "apigrate",
+    "msp"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Abraham Bouzaglou",
+    "url": "https://github.com/aybouzaglou"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aybouzaglou/autotask-rest-api-types.git"
+  },
+  "homepage": "https://github.com/aybouzaglou/autotask-rest-api-types#readme",
+  "bugs": {
+    "url": "https://github.com/aybouzaglou/autotask-rest-api-types/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./entities": {
+      "types": "./dist/generated/entities.d.ts",
+      "import": "./dist/generated/entities.js",
+      "default": "./dist/generated/entities.js"
+    },
+    "./metadata": {
+      "types": "./dist/generated/metadata.d.ts",
+      "import": "./dist/generated/metadata.js",
+      "default": "./dist/generated/metadata.js"
+    }
+  },
+  "bin": {
+    "autotask-enrich": "scripts/enrich.mjs"
+  },
+  "files": [
+    "dist",
+    "src",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "scripts/enrich.mjs",
+    "scripts/_at-readonly.mjs",
+    "!**/generated/field-metadata.ts",
+    "!**/generated/field-metadata.js",
+    "!**/generated/field-metadata.d.ts",
+    "!**/generated/field-metadata.js.map",
+    "!**/generated/field-metadata.d.ts.map"
+  ],
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "enrich": "node scripts/enrich.mjs",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run generate && npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

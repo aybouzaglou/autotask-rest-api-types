@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+
+# Instance-specific metadata captured by `npm run enrich` — contains your
+# tenant's zone + picklist values. Never commit; never publish.
+src/generated/field-metadata.ts
+
+*.log
+.DS_Store
+.idea/
+.vscode/
+typetest/*.tsbuildinfo

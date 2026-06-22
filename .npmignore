@@ -1,0 +1,25 @@
+# What ships is governed by the "files" whitelist in package.json
+# (dist, src, docs, README, LICENSE, scripts/enrich.mjs, scripts/_at-readonly.mjs).
+# The rules below additionally EXCLUDE files that fall inside those directories.
+
+# Tenant-specific, instance-generated field metadata — NEVER publish (privacy).
+# Each consumer generates their own with `npx autotask-enrich`.
+src/generated/field-metadata.ts
+dist/generated/field-metadata.js
+dist/generated/field-metadata.d.ts
+dist/generated/field-metadata.js.map
+dist/generated/field-metadata.d.ts.map
+
+# Maintainer-only scripts (not part of the published surface).
+scripts/generate.mjs
+scripts/_at-write.mjs
+scripts/edge-probe.mjs
+
+# Source spec / dev artifacts (kept in the repo, not shipped).
+swagger.json
+typetest/
+examples/
+.gitignore
+tsconfig.json
+*.log
+.DS_Store
