@@ -59,8 +59,9 @@
   "files": [
     "dist",
     "src",
-    "docs",
+    "skills",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "scripts/enrich.mjs",
     "scripts/_at-readonly.mjs",
@@ -84,6 +85,9 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

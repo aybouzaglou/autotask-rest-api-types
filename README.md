@@ -1,18 +1,16 @@
 # autotask-rest-api-types
 
-**Comprehensive, type-safe TypeScript types for the Datto/Kaseya Autotask PSA REST API** — generated directly from Autotask's official Swagger 2.0 specification.
+TypeScript types for the Datto/Kaseya Autotask PSA REST API, generated from Autotask's official Swagger 2.0 spec. Entity interfaces, typed query filters and response envelopes, a typed client surface, and a machine-readable catalog of every collection — for Next.js/TypeScript integrations, tooling, and codegen.
 
-Built to make Autotask integrations in **Next.js / TypeScript** projects safe and self-documenting, and to help **AI coding assistants** write correct Autotask code (it ships a machine-readable catalog of every entity and operation).
-
-- ✅ **223 entity interfaces** (Companies, Tickets, Contacts, Contracts, Configuration Items, Projects, Time Entries, attachments, …) with per-field JSDoc.
-- ✅ **221 strongly-typed REST collections** mapped to their entity in `AutotaskEntities`.
-- ✅ **Fully-typed query filters** — all 13 query operators plus grouped `and`/`or`, `includeFields`, a fluent filter DSL, and cursor pagination helpers.
-- ✅ **Typed response envelopes** — `{ items, pageDetails }`, `{ item }`, `{ itemId }`, plus the entity-information / live picklist metadata shapes.
-- ✅ **Two client surfaces** — drop-in typing for the popular [`@apigrate/autotask-restapi`](https://github.com/apigrate/autotask-restapi) connector, and a provider-agnostic `AutotaskTypedClient` you can implement over `fetch`.
-- ✅ **Runtime catalog** — `AUTOTASK_COLLECTIONS` describes every collection (operations, UDF support, parent collections) for tooling and agents.
-- ✅ **Webhook helpers** — typed delivery parsing, HMAC verification, registration plan builders, and a tiny optional router.
-- ✅ **Optional instance enrichment** — `npx autotask-enrich` (read-only) captures **your own** instance's live picklist values, required/read-only flags, and reference targets into a file in **your** project, plus strict picklist type aliases (`TicketPriorityValue = 1 | 2 | 3 | 4`). Instance-specific data is never bundled or published — you generate it yourself.
-- ✅ **Type-only by default** — no runtime dependencies; tree-shakeable; ESM with full `.d.ts`.
+- **223 entity interfaces** (Companies, Tickets, Contacts, Contracts, Configuration Items, Projects, Time Entries, attachments, …) with per-field JSDoc.
+- **221 REST collections** mapped to their entity in `AutotaskEntities`.
+- **Query filters** — all 13 query operators plus grouped `and`/`or`, `includeFields`, a fluent filter DSL, and cursor pagination helpers.
+- **Response envelopes** — `{ items, pageDetails }`, `{ item }`, `{ itemId }`, plus entity-information / live picklist metadata shapes.
+- **Two client surfaces** — typing for the [`@apigrate/autotask-restapi`](https://github.com/apigrate/autotask-restapi) connector, and a provider-agnostic `AutotaskTypedClient` you implement over `fetch`.
+- **Runtime catalog** — `AUTOTASK_COLLECTIONS` describes every collection (operations, UDF support, parent collections).
+- **Webhook helpers** — typed delivery parsing, HMAC verification, registration plan builders, and an optional router.
+- **Instance enrichment** — `npx autotask-enrich` (read-only) captures your instance's live picklist values, required/read-only flags, and reference targets into your project, plus strict picklist type aliases (`TicketPriorityValue = 1 | 2 | 3 | 4`). Instance data is never bundled.
+- **Type-only by default** — no runtime dependencies; tree-shakeable; ESM with full `.d.ts`.
 
 > Unofficial / community-maintained. "Autotask" is a trademark of Datto/Kaseya. Generated from the public API spec; not affiliated with or endorsed by Datto or Kaseya.
 
@@ -37,7 +35,7 @@ pnpm add @apigrate/autotask-restapi
 
 ## Quick start — with the apigrate connector
 
-The simplest way to get full autocomplete is to cast the connector instance to `AutotaskApi`:
+Cast the connector instance to `AutotaskApi` for end-to-end typing:
 
 ```ts
 import { AutotaskRestApi } from "@apigrate/autotask-restapi";
@@ -60,7 +58,7 @@ const { items, pageDetails } = await autotask.Companies.query({
 items.forEach((c: Company) => console.log(c.id, c.companyName));
 ```
 
-Everything is typed end-to-end: `filter` fields autocomplete from the entity, `includeFields` is checked, and `items` is `Company[]`.
+`filter` fields and `includeFields` autocomplete from the entity; `items` is `Company[]`.
 
 ---
 
@@ -80,7 +78,7 @@ const { items: tickets } = await client.query("Tickets", {
 });
 ```
 
-See [`docs/AI_GUIDE.md`](docs/AI_GUIDE.md) for a complete `fetch`-based client implementation including header auth and zone detection, and [`examples/nextjs`](examples/nextjs) for a runnable Next.js Ticket Console (works simulated with no credentials, flips to live when present).
+See [`skills/autotask-rest-api`](skills/autotask-rest-api/SKILL.md) for the AI-assistant guide and a complete `fetch`-based client (header auth + zone detection), and [`examples/nextjs`](https://github.com/aybouzaglou/autotask-rest-api-types/tree/main/examples/nextjs) for a runnable Next.js Ticket Console (simulated without credentials, live when present).
 
 ### Error handling
 
@@ -96,7 +94,7 @@ if (!res.ok) {
 }
 ```
 
-> **Connector vs `fetch`.** The apigrate connector (the `AutotaskApi` cast) **throws** on a failed request rather than returning the envelope — the call rejects with an `AutotaskApiError` carrying `.status` and `.details` (the `{ errors }` body). Wrap those calls in `try/catch` and read `err.details` / `err.status`. The `isAutotaskError` check above is for the raw `fetch` / `AutotaskTypedClient` path, which returns the body.
+> **Connector vs `fetch`.** The apigrate connector throws on a failed request instead of returning the envelope — the call rejects with an `AutotaskApiError` carrying `.status` and `.details` (the `{ errors }` body). Wrap those calls in `try/catch`; the `isAutotaskError` check above is for the raw `fetch` / `AutotaskTypedClient` path, which returns the body.
 
 ---
 
@@ -200,7 +198,7 @@ function load<K extends EntityName>(name: K): Promise<EntityOf<K>[]> { /* ... */
 
 ### Field typing conventions
 
-Generated from the spec, so the mapping is mechanical and consistent:
+Generated from the spec; the type mapping is:
 
 | Swagger | TypeScript | Notes |
 |---|---|---|
@@ -216,7 +214,7 @@ Generated from the spec, so the mapping is mechanical and consistent:
 
 ### Working with nullable fields
 
-Helpers reduce the narrowing tax of the null-everywhere shape:
+Helpers cut down on null-narrowing boilerplate:
 
 ```ts
 import { requireField, isPresent } from "autotask-rest-api-types";
@@ -298,7 +296,7 @@ const q = {
 
 ### Pagination
 
-Autotask returns up to **500 records per page** (`MAX_PAGE_SIZE`) with a `pageDetails` block. To pull an entire result set, use the built-in id-cursor helpers — robust and stateless (no reliance on `nextPageUrl`):
+Autotask returns up to **500 records per page** (`MAX_PAGE_SIZE`) with a `pageDetails` block. To pull an entire result set, use the built-in id-cursor helpers (no reliance on `nextPageUrl`):
 
 ```ts
 import { collectAll, iterateAll } from "autotask-rest-api-types";
@@ -338,7 +336,7 @@ await autotask.TimeEntries.delete(someTimeEntryId);
 
 `CreateInput<"Tickets">` / `UpdateInput<"Tickets">` are convenience aliases keyed by collection name.
 
-> **PATCH vs PUT — read this.** `update()` is a **PATCH** (sparse): only the fields you send are changed. `replace()` is a **PUT** (full replace): **every writable field you omit from the body is set to `null`/default.** The types enforce this — `replace()` takes a `ReplaceModel<T>` that **requires every writable field** (read-only fields excluded), so a partial like `{ id, title }` won't compile; build it from a fully-loaded record (`replace({ ...loaded, title })`). Prefer `update()` unless you deliberately want a full replace. Create, update, and replace all return **HTTP 200** with `{ itemId }` (Autotask does not use `201`).
+> **PATCH vs PUT.** `update()` is a PATCH (sparse): only the fields you send change. `replace()` is a PUT (full replace): every writable field you omit is set to `null`/default. The types enforce this — `replace()` takes a `ReplaceModel<T>` that requires every writable field (read-only excluded), so a partial like `{ id, title }` won't compile; build it from a fully-loaded record (`replace({ ...loaded, title })`). Prefer `update()` unless you deliberately want a full replace. Create, update, and replace all return HTTP 200 with `{ itemId }` (Autotask does not use `201`).
 
 > **Many entities can't be deleted via the API** (e.g. `Companies`, `Tickets`), and child entities like `*Notes` are **created/updated under their parent** (`POST /Companies/{parentId}/Notes`). The runtime catalog records this — check `AUTOTASK_COLLECTIONS[name].canDelete` and `.parentWriteOnly` / `.parents` before assuming an operation exists.
 
@@ -377,7 +375,7 @@ status?.picklistValues?.forEach((v: PickListValue) => console.log(v.value, "→"
 
 ### Captured field metadata (generate your own — never bundled)
 
-Picklist values, required/read-only flags, and reference targets are **instance-specific**, so they are **not** part of this package — shipping one tenant's configuration to everyone would be both wrong and a privacy leak. Instead, generate a snapshot of **your** instance into **your** project:
+Picklist values, required/read-only flags, and reference targets are **instance-specific**, so they are not bundled. Generate a snapshot of your instance into your project:
 
 ```bash
 # read-only against your instance; reads creds from ./.env in your project
@@ -409,7 +407,7 @@ const priority: TicketPriorityValue = 2; // 1 | 2 | 3 | 4 — `99` would be a co
 
 ## Runtime collection catalog
 
-`AUTOTASK_COLLECTIONS` is a typed `as const` map of every REST collection — great for building UIs, validation, or guiding an AI assistant:
+`AUTOTASK_COLLECTIONS` is a typed `as const` map of every REST collection:
 
 ```ts
 import { AUTOTASK_COLLECTIONS, COLLECTION_NAMES } from "autotask-rest-api-types";
@@ -461,9 +459,13 @@ npm run enrich   # writes src/generated/field-metadata.ts (git-ignored, NOT publ
 npm run build
 ```
 
-The output is **instance-specific** and therefore git-ignored and excluded from the published tarball — it never leaves your machine. Consumers of the published package generate their own with `npx autotask-enrich` (see [Captured field metadata](#captured-field-metadata-generate-your-own--never-bundled)). The enrich client **only issues GET requests** — it can't create, modify, or delete data.
+The output is **instance-specific**, git-ignored, and excluded from the published tarball. Consumers of the published package generate their own with `npx autotask-enrich` (see [Captured field metadata](#captured-field-metadata-generate-your-own--never-bundled)).
 
 ---
+
+## AI coding assistants
+
+This package ships an agent skill at [`skills/autotask-rest-api/SKILL.md`](skills/autotask-rest-api/SKILL.md) — the rules for generating correct Autotask code (the null-everywhere field shape, instance-specific picklists, PATCH vs PUT, the exact operator set) and a complete `fetch` client. Point your assistant at it, or have it read the runtime `AUTOTASK_COLLECTIONS` catalog for what each collection supports.
 
 ## License
 

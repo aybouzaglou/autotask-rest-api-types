@@ -192,8 +192,9 @@ for (const [p, ops] of Object.entries(paths)) {
   // entityInformation paths at top level — no GET /{id} or POST /query — so
   // their own `model` never resolves and this match can't fire. They remain
   // typed:false with all-false flags; their data lives only under
-  // /Resources/{parentId}/TimeOff*. Documented as a known gap in docs/AI_GUIDE.md
-  // rather than fixed with a fragile name-based fallback.
+  // /Resources/{parentId}/TimeOff*. Documented as a known gap in
+  // skills/autotask-rest-api/SKILL.md rather than fixed with a fragile
+  // name-based fallback.
   for (const e of childPaths.values()) {
     if (!e.model) continue;
     for (const c of collections.values()) {

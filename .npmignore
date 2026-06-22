@@ -1,5 +1,5 @@
 # What ships is governed by the "files" whitelist in package.json
-# (dist, src, docs, README, LICENSE, scripts/enrich.mjs, scripts/_at-readonly.mjs).
+# (dist, src, skills, README, CHANGELOG, LICENSE, scripts/enrich.mjs, scripts/_at-readonly.mjs).
 # The rules below additionally EXCLUDE files that fall inside those directories.
 
 # Tenant-specific, instance-generated field metadata — NEVER publish (privacy).
