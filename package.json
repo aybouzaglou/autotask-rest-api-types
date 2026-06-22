@@ -1,6 +1,6 @@
 {
   "name": "autotask-rest-api-types",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Comprehensive, generated TypeScript types for the Datto/Kaseya Autotask PSA REST API. Strongly-typed entities, query filters, responses, and a typed client surface for the apigrate/autotask-restapi connector. Built for Next.js and TS projects.",
   "keywords": [
     "autotask",
